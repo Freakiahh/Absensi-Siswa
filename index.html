@@ -1,0 +1,1663 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Absensi Siswa</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg: #e6f3ff;
+            --card: #f0f8ff;
+            --muted: #64748b;
+            --accent: #0ea5a3;
+            --accent-strong: #047a76;
+            --success: #4fc3a1;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --glass: rgba(240, 248, 255, 0.8);
+            --light-green: #d1fae5;
+            --light-blue: #dbeafe;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Inter, 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(180deg, var(--bg) 0%, #f0f8ff 100%);
+            color: #0f172a;
+            min-height: 100vh;
+        }
+
+        /* Loading Spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, .3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Notification */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--success);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10000;
+            animation: slideIn 0.3s ease-out;
+            max-width: 300px;
+        }
+
+        .notification.error {
+            background: var(--danger);
+        }
+
+        .notification.warning {
+            background: var(--warning);
+        }
+
+        .notification.info {
+            background: var(--info);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* ==================== ABSENSI SISWA (Mobile-First) ==================== */
+        .absensi-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .absensi-container {
+            background: var(--card);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(16, 24, 40, 0.12);
+            width: 100%;
+            max-width: 400px;
+            padding: 32px 24px;
+            transition: all 0.3s ease;
+        }
+
+        .absensi-container:hover {
+            box-shadow: 0 20px 48px rgba(16, 24, 40, 0.18);
+            transform: translateY(-2px);
+        }
+
+        .absensi-container h1 {
+            color: var(--accent-strong);
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .absensi-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-size: 0.95rem;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .form-group input {
+            padding: 14px;
+            border-radius: 10px;
+            border: 1.5px solid #e6eef0;
+            background: #f8fbff;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 2px 8px rgba(14, 165, 163, 0.10);
+            outline: none;
+        }
+
+        .submit-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            background: var(--accent-strong);
+            box-shadow: 0 4px 16px rgba(14, 165, 163, 0.16);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status-message {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .status-message.success {
+            background: var(--light-green);
+            color: var(--success);
+        }
+
+        .status-message.error {
+            background: #fee;
+            color: var(--danger);
+        }
+
+        .status-message.info {
+            background: var(--light-blue);
+            color: var(--info);
+        }
+
+        .corner-link {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            color: var(--accent-strong);
+            padding: 10px 16px;
+            border-radius: 10px;
+            text-decoration: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .corner-link:hover {
+            background: var(--accent);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        /* ==================== OPERATOR & REKAP (Desktop-First) ==================== */
+        .dashboard-page {
+            padding: 28px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .dashboard-header {
+            background: var(--accent);
+            color: white;
+            padding: 20px 28px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(14, 165, 163, 0.3);
+            margin-bottom: 24px;
+        }
+
+        .dashboard-header h2 {
+            font-size: 1.4rem;
+            letter-spacing: 0.3px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .token-display {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .btn {
+            background: white;
+            color: var(--accent-strong);
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--light-green);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-strong);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .content-card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+        }
+
+        .content-card h3 {
+            color: var(--accent-strong);
+            margin-bottom: 16px;
+            font-size: 1.2rem;
+        }
+
+        /* Form Add Siswa */
+        .add-form {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .add-form input {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px 14px;
+            border: 1px solid #e6eef0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+        }
+
+        .add-form input:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid #e1e1e1;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th,
+        td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f1f5f9;
+            font-weight: 600;
+            color: #334155;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        tr:hover td {
+            background: var(--light-blue);
+        }
+
+        /* Filter Controls */
+        .filter-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 1px solid #e6eef0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .filter-btn:hover {
+            background: var(--light-blue);
+        }
+
+        .filter-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        /* Calendar View */
+        .calendar-view {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin: 20px 0;
+        }
+
+        .date-cell {
+            padding: 12px;
+            border-radius: 8px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .date-cell:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .date-cell.header {
+            background: var(--accent);
+            color: white;
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .date-cell.header:hover {
+            transform: none;
+        }
+
+        .date-cell.hadir {
+            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+            border-color: #10b981;
+        }
+
+        .date-cell.izin {
+            background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+            border-color: #f97316;
+        }
+
+        .date-cell.sakit {
+            background: linear-gradient(135deg, #eff6ff 0%, #bfdbfe 100%);
+            border-color: #3b82f6;
+        }
+
+        .date-cell.alpa {
+            background: linear-gradient(135deg, #fff1f2 0%, #fecaca 100%);
+            border-color: #ef4444;
+        }
+
+        .date-cell small {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+        }
+
+        /* Login Page */
+        .login-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: var(--card);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(16, 24, 40, 0.12);
+            width: 100%;
+            max-width: 400px;
+            padding: 32px 28px;
+        }
+
+        .login-container h1 {
+            color: var(--accent-strong);
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .dashboard-page {
+                padding: 16px;
+            }
+
+            .dashboard-header {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+            }
+
+            .calendar-view {
+                grid-template-columns: repeat(7, 1fr);
+                gap: 4px;
+            }
+
+            .date-cell {
+                min-height: 60px;
+                padding: 8px 4px;
+                font-size: 0.85rem;
+            }
+
+            table {
+                font-size: 0.8rem;
+            }
+
+            th,
+            td {
+                padding: 8px 6px;
+            }
+        }
+
+        /* Hidden utility */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Select styling */
+        select {
+            padding: 8px 12px;
+            border: 1px solid #e6eef0;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        select:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid var(--accent);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .stat-card h4 {
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-strong);
+        }
+
+        .stat-card.hadir {
+            border-left-color: #10b981;
+        }
+
+        .stat-card.hadir .value {
+            color: #10b981;
+        }
+
+        .stat-card.izin {
+            border-left-color: #f97316;
+        }
+
+        .stat-card.izin .value {
+            color: #f97316;
+        }
+
+        .stat-card.sakit {
+            border-left-color: #3b82f6;
+        }
+
+        .stat-card.sakit .value {
+            color: #3b82f6;
+        }
+
+        .stat-card.alpa {
+            border-left-color: #ef4444;
+        }
+
+        .stat-card.alpa .value {
+            color: #ef4444;
+        }
+    </style>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+
+<body>
+    <div id="app"></div>
+
+    <script>
+        // ==================== AUTHENTICATION STATE ====================
+        const Auth = {
+            getOperator() {
+                const data = localStorage.getItem('operator');
+                return data ? JSON.parse(data) : null;
+            },
+
+            setOperator(operator) {
+                localStorage.setItem('operator', JSON.stringify(operator));
+            },
+
+            clearOperator() {
+                localStorage.removeItem('operator');
+            },
+
+            isLoggedIn() {
+                return this.getOperator() !== null;
+            },
+
+            async login(nickname, password) {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nickname, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+
+                this.setOperator(data.operator);
+                return data.operator;
+            },
+
+            async getToken() {
+                const response = await fetch(`${API_URL}/auth/token`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to get token');
+                }
+
+                return data.token_harian;
+            },
+
+            async validateToken(token) {
+                const response = await fetch(`${API_URL}/auth/validate-token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+
+                const data = await response.json();
+                return data.valid;
+            }
+        };
+
+        // ==================== SOCKET.IO CLIENT ====================
+        let socket = io('http://localhost:3000');
+
+        socket.on('connect', () => console.log('Connected to server'));
+        socket.on('absensi-added', () => {
+            if (State.currentPage === 'dashboard') {
+                Renders.renderRekapTable();
+                Renders.renderStatsToday();
+            } else if (State.currentPage === 'rekap') {
+                Renders.renderRekapDetail();
+                Renders.renderStats();
+                Renders.renderChart();
+                Renders.renderCalendar();
+            }
+        });
+        socket.on('siswa-added', () => {
+            if (State.currentPage === 'dashboard') {
+                Renders.renderSiswaTable();
+            }
+        });
+        socket.on('siswa-deleted', () => {
+            if (State.currentPage === 'dashboard') {
+                Renders.renderSiswaTable();
+            }
+        });
+        socket.on('status-updated', () => {
+            if (State.currentPage === 'dashboard') {
+                Renders.renderRekapTable();
+                Renders.renderStatsToday();
+            } else if (State.currentPage === 'rekap') {
+                Renders.renderRekapDetail();
+                Renders.renderStats();
+                Renders.renderChart();
+                Renders.renderCalendar();
+            }
+        });
+
+        // ==================== UTILITIES ====================
+        const Utils = {
+            // SHA-256 Hash
+            async sha256(message) {
+                const msgBuffer = new TextEncoder().encode(message);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            },
+
+            // Format date to YYYY-MM-DD (local timezone)
+            formatDate(date = new Date()) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            },
+
+            // Format date for display (DD/MM/YYYY)
+            formatDisplayDate(dateString) {
+                if (!dateString) return '-';
+                const date = new Date(dateString);
+                if (isNaN(date.getTime())) return dateString; // fallback if invalid
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            },
+
+            // Generate daily token
+            generateToken() {
+                const date = new Date();
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+                return `F1${day}${month}${random}`;
+            },
+
+            // Get week dates (Mon-Fri)
+            getWeekDates() {
+                const today = new Date();
+                const dates = [];
+                const monday = new Date(today);
+                monday.setDate(today.getDate() - today.getDay() + 1);
+
+                for (let i = 0; i < 5; i++) {
+                    const date = new Date(monday);
+                    date.setDate(monday.getDate() + i);
+                    dates.push(this.formatDate(date));
+                }
+                return dates;
+            },
+
+            // Get month dates
+            getMonthDates(yearMonth = null) {
+                const date = yearMonth ? new Date(yearMonth + '-01') : new Date();
+                const year = date.getFullYear();
+                const month = date.getMonth();
+                const lastDay = new Date(year, month + 1, 0).getDate();
+                const dates = [];
+
+                for (let i = 1; i <= lastDay; i++) {
+                    const currentDate = new Date(year, month, i);
+                    dates.push(this.formatDate(currentDate));
+                }
+                return dates;
+            },
+
+            // Validate NIS (must be numeric)
+            validateNIS(nis) {
+                return /^\d+$/.test(nis);
+            },
+
+            // Sanitize input
+            sanitize(str) {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            },
+
+            // Show notification
+            showNotification(message, type = 'success') {
+                const notification = document.createElement('div');
+                notification.className = `notification ${type}`;
+                notification.textContent = message;
+                document.body.appendChild(notification);
+
+                setTimeout(() => {
+                    notification.remove();
+                }, 3000);
+            }
+        };
+        // ==================== EXPORT UTILITIES ====================
+        const ExportUtils = {
+            // Export rekap filtered to Excel
+            async exportRekapFiltered() {
+                try {
+                    const rekapData = await API.getRekap(State.currentFilter);
+
+                    // Format data untuk Excel
+                    const excelData = rekapData.map((r, i) => ({
+                        'No': i + 1,
+                        'Nama': r.nama,
+                        'NIS': r.nis,
+                        'Tanggal': Utils.formatDisplayDate(r.tanggal),
+                        'Status': r.status
+                    }));
+
+                    const filterName = State.currentFilter === 'hari'
+                        ? 'Hari_Ini'
+                        : State.currentFilter === 'minggu'
+                            ? 'Minggu_Ini'
+                            : 'Bulan_Ini';
+
+                    // Create workbook
+                    const wb = XLSX.utils.book_new();
+
+                    // Convert data to worksheet
+                    const ws = XLSX.utils.json_to_sheet(excelData);
+
+                    // Auto-size columns
+                    const maxWidth = excelData.reduce((w, r) => Math.max(w, r.Nama.length), 10);
+                    ws['!cols'] = [
+                        { wch: 5 },  // No
+                        { wch: maxWidth + 5 },  // Nama
+                        { wch: 10 }, // NIS
+                        { wch: 12 }, // Tanggal
+                        { wch: 10 }  // Status
+                    ];
+
+                    // Add worksheet to workbook
+                    XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi');
+
+                    // Generate Excel file and download
+                    const filename = `Rekap_Absensi_${filterName}_${Utils.formatDate()}.xlsx`;
+                    XLSX.writeFile(wb, filename);
+
+                    Utils.showNotification(`File berhasil diexport!`, 'success');
+                } catch (error) {
+                    console.error('Export error:', error);
+                    Utils.showNotification('Gagal export data rekap', 'error');
+                }
+            }
+        };
+
+        const API_URL = "http://localhost:3000/api";
+
+        // ==================== STATE MANAGEMENT ====================
+        const State = {
+            currentPage: 'absensi',
+            currentUser: null,
+            currentFilter: 'hari',
+            selectedDate: null,
+
+            setPage(page) {
+                this.currentPage = page;
+                Router.render();
+            },
+
+            setUser(user) {
+                this.currentUser = user;
+            },
+
+            logout() {
+                this.currentUser = null;
+                this.setPage('login');
+            }
+        };
+
+        // ==================== API INTEGRATION ====================
+        const API = {
+            // Get siswa
+            async getSiswa() {
+                const response = await fetch(`${API_URL}/siswa`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch siswa');
+                }
+                return await response.json();
+            },
+
+            // Add siswa
+            async addSiswa(nama, nis) {
+                const response = await fetch(`${API_URL}/siswa`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nama, nis })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to add siswa');
+                }
+                return data;
+            },
+
+            // Delete siswa
+            async deleteSiswa(id) {
+                const response = await fetch(`${API_URL}/siswa/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to delete siswa');
+                }
+                return true;
+            },
+
+            // Get rekap
+            async getRekap(filter = 'all') {
+                const params = new URLSearchParams();
+                if (filter !== 'all') {
+                    params.append('filter', filter);
+                }
+
+                const response = await fetch(`${API_URL}/rekap?${params}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch rekap');
+                }
+
+                const rekapData = await response.json();
+
+                // Join with siswa data
+                const siswaList = await this.getSiswa();
+                const siswaMap = new Map(siswaList.map(s => [s.nis, s.nama]));
+
+                return rekapData.map(r => ({
+                    ...r,
+                    nama: siswaMap.get(r.nis) || 'Tidak ditemukan'
+                }));
+            },
+
+            // Add absensi
+            async addAbsensi(nis, token) {
+                const response = await fetch(`${API_URL}/rekap`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nis, token })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to add absensi');
+                }
+                return data;
+            },
+
+            // Update status
+            async updateStatus(id, status) {
+                const response = await fetch(`${API_URL}/rekap/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update status');
+                }
+                return true;
+            },
+
+            // Get statistics
+            async getStatistics(dates = null) {
+                const params = new URLSearchParams();
+                if (dates) {
+                    params.append('dates', dates.join(','));
+                }
+
+                const response = await fetch(`${API_URL}/rekap/statistics?${params}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch statistics');
+                }
+                return await response.json();
+            }
+        };
+
+        // ==================== COMPONENTS ====================
+        const Components = {
+            // Absensi Siswa Page
+            AbsensiPage() {
+                return `
+                    <div class="absensi-page">
+                        <div class="absensi-container">
+                            <h1>📝 Absensi Siswa</h1>
+                            <form class="absensi-form" onsubmit="Handlers.handleAbsensi(event)">
+                                <div class="form-group">
+                                    <label for="nis">NIS Siswa:</label>
+                                    <input type="text" id="nis" required placeholder="Masukkan NIS..." autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="token">Token Hari Ini:</label>
+                                    <input type="text" id="token" required placeholder="Masukkan Token..." autocomplete="off">
+                                </div>
+                                <button type="submit" class="submit-btn" id="submitBtn">Kirim Absen</button>
+                            </form>
+                            <div id="statusMessage"></div>
+                        </div>
+                        <a href="#" onclick="State.setPage('login'); return false;" class="corner-link">Masuk Admin</a>
+                    </div>
+                `;
+            },
+
+            // Login Page
+            LoginPage() {
+                return `
+                    <div class="login-page">
+                        <div class="login-container">
+                            <h1>🔐 Login Operator</h1>
+                            <form class="absensi-form" onsubmit="Handlers.handleLogin(event)">
+                                <div class="form-group">
+                                    <label for="nickname">Nickname:</label>
+                                    <input type="text" id="nickname" required placeholder="Masukkan nickname..." autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="password">Password:</label>
+                                    <input type="password" id="password" required placeholder="Masukkan password..." autocomplete="off">
+                                </div>
+                                <button type="submit" class="submit-btn" id="loginBtn">Login</button>
+                            </form>
+                            <div id="loginStatus"></div>
+                        </div>
+                        <a href="#" onclick="State.setPage('absensi'); return false;" class="corner-link">Kembali ke Absensi</a>
+                    </div>
+                `;
+            },
+
+            // Dashboard Operator
+            DashboardPage() {
+                return `
+                    <div class="dashboard-page">
+                        <div class="dashboard-header">
+                            <h2>📊 Dashboard Operator</h2>
+                            <div class="header-actions">
+                                <span class="token-display" id="tokenDisplay">Token: Loading...</span>
+                                <button class="btn" onclick="State.setPage('rekap')">Rekap Lengkap</button>
+                                <button class="btn btn-danger" onclick="Handlers.handleLogout()">Logout</button>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <h3>👥 Daftar Siswa</h3>
+                            <form class="add-form" onsubmit="Handlers.handleAddSiswa(event)">
+                                <input type="text" id="namaSiswa" placeholder="Nama siswa" required>
+                                <input type="text" id="nisSiswa" placeholder="NIS (angka saja)" required pattern="\\d+">
+                                <button type="submit" class="btn btn-primary">Tambah Siswa</button>
+                            </form>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>No</th>
+                                            <th>Nama</th>
+                                            <th>NIS</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tabelSiswa"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <h3>📋 Rekap Absensi Hari Ini</h3>
+                            <div id="statsToday"></div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>No</th>
+                                            <th>Nama</th>
+                                            <th>NIS</th>
+                                            <th>Tanggal</th>
+                                            <th>Status</th>
+                                            <th>Ubah Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tabelRekap"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            // Rekap Page
+            RekapPage() {
+                return `
+                    <div class="dashboard-page">
+                        <div class="dashboard-header">
+                            <h2>📈 Rekap Absensi Lengkap</h2>
+                            <div class="header-actions">
+                                <button class="btn" onclick="State.setPage('dashboard')">Kembali ke Dashboard</button>
+                                <button class="btn btn-danger" onclick="Handlers.handleLogout()">Logout</button>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <h3>🗓️ Filter Tampilan</h3>
+                            <div class="filter-controls">
+                                <button class="filter-btn active" data-filter="hari" onclick="Handlers.handleFilter('hari')">Hari Ini</button>
+                                <button class="filter-btn" data-filter="minggu" onclick="Handlers.handleFilter('minggu')">Minggu Ini</button>
+                                <button class="filter-btn" data-filter="bulan" onclick="Handlers.handleFilter('bulan')">Bulan Ini</button>
+                            </div>
+                            <div id="statsContainer"></div>
+                        </div>
+
+                        <div class="content-card">
+                            <h3>📊 Grafik Kehadiran</h3>
+                            <div class="chart-container">
+                                <canvas id="attendanceChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <h3 id="calendarTitle">📅 Kalender Kehadiran</h3>
+                            <div id="calendarView" class="calendar-view"></div>
+                        </div>
+
+                        <div class="content-card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <h3 id="tableTitle" style="margin: 0;">📋 Detail Kehadiran</h3>
+                                <button class="btn btn-primary" onclick="ExportUtils.exportRekapFiltered()" style="display: flex; align-items: center; gap: 8px;">
+                                    <span>📥</span>
+                                    <span>Export ke Excel</span>
+                                </button>
+                            </div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>No</th>
+                                            <th>Nama</th>
+                                            <th>NIS</th>
+                                            <th>Tanggal</th>
+                                            <th>Status</th>
+                                            <th>Ubah Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tabelRekapDetail"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            // Stats Cards
+            StatsCards(stats) {
+                return `
+                    <div class="stats-grid">
+                        <div class="stat-card hadir">
+                            <h4>Hadir</h4>
+                            <div class="value">${stats.hadir}</div>
+                        </div>
+                        <div class="stat-card izin">
+                            <h4>Izin</h4>
+                            <div class="value">${stats.izin}</div>
+                        </div>
+                        <div class="stat-card sakit">
+                            <h4>Sakit</h4>
+                            <div class="value">${stats.sakit}</div>
+                        </div>
+                        <div class="stat-card alpa">
+                            <h4>Alpa</h4>
+                            <div class="value">${stats.alpa}</div>
+                        </div>
+                    </div>
+                `;
+            }
+        };
+
+        // ==================== HANDLERS ====================
+        const Handlers = {
+            // Handle absensi submission
+            async handleAbsensi(event) {
+                event.preventDefault();
+
+                const submitBtn = document.getElementById('submitBtn');
+                const statusDiv = document.getElementById('statusMessage');
+                const nis = document.getElementById('nis').value.trim();
+                const token = document.getElementById('token').value.trim();
+
+                try {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="loading"></span> Memproses...';
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'Memproses absensi...';
+
+                    // Simulate network delay
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    await API.addAbsensi(nis, token);
+
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✅ Absensi berhasil dicatat!';
+                    Utils.showNotification('Absensi berhasil dicatat!', 'success');
+
+                    event.target.reset();
+
+                    setTimeout(() => {
+                        statusDiv.textContent = '';
+                        statusDiv.className = '';
+                    }, 5000);
+
+                } catch (error) {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '❌ ' + error.message;
+                    Utils.showNotification(error.message, 'error');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Kirim Absen';
+                }
+            },
+
+            // Handle login
+            async handleLogin(event) {
+                event.preventDefault();
+
+                const loginBtn = document.getElementById('loginBtn');
+                const statusDiv = document.getElementById('loginStatus');
+                const nickname = document.getElementById('nickname').value.trim();
+                const password = document.getElementById('password').value.trim();
+
+                try {
+                    loginBtn.disabled = true;
+                    loginBtn.innerHTML = '<span class="loading"></span> Login...';
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'Memproses login...';
+
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    const operator = await Auth.login(nickname, password);
+
+                    if (!operator) {
+                        throw new Error('Login gagal! Cek nickname atau password.');
+                    }
+
+                    State.setUser(operator);
+                    Utils.showNotification('Login berhasil!', 'success');
+
+                    setTimeout(() => {
+                        State.setPage('dashboard');
+                    }, 500);
+
+                } catch (error) {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '❌ ' + error.message;
+                    Utils.showNotification(error.message, 'error');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Login';
+                }
+            },
+
+            // Handle logout
+            handleLogout() {
+                if (confirm('Yakin ingin logout?')) {
+                    Utils.showNotification('Logout berhasil', 'info');
+                    State.logout();
+                }
+            },
+
+            // Handle add siswa
+            async handleAddSiswa(event) {
+                event.preventDefault();
+
+                const nama = document.getElementById('namaSiswa').value.trim();
+                const nis = document.getElementById('nisSiswa').value.trim();
+
+                try {
+                    await API.addSiswa(nama, nis);
+                    Utils.showNotification('Siswa berhasil ditambahkan!', 'success');
+                    event.target.reset();
+                    Renders.renderSiswaTable();
+                } catch (error) {
+                    Utils.showNotification(error.message, 'error');
+                }
+            },
+
+            // Handle delete siswa
+            async handleDeleteSiswa(id) {
+                if (confirm('Yakin ingin menghapus siswa ini?')) {
+                    try {
+                        await API.deleteSiswa(id);
+                        Utils.showNotification('Siswa berhasil dihapus', 'success');
+                        Renders.renderSiswaTable();
+                    } catch (error) {
+                        Utils.showNotification('Gagal menghapus siswa', 'error');
+                    }
+                }
+            },
+
+            // Handle update status
+            async handleUpdateStatus(id, newStatus) {
+                try {
+                    await API.updateStatus(id, newStatus);
+                    Utils.showNotification('Status berhasil diubah', 'success');
+
+                    // Re-render based on current page
+                    if (State.currentPage === 'dashboard') {
+                        Renders.renderRekapTable();
+                        Renders.renderStatsToday();
+                    } else if (State.currentPage === 'rekap') {
+                        Renders.renderRekapDetail();
+                        Renders.renderStats();
+                        Renders.renderChart();
+                        Renders.renderCalendar();
+                    }
+                } catch (error) {
+                    Utils.showNotification('Gagal mengubah status', 'error');
+                }
+            },
+
+            // Handle filter change
+            async handleFilter(filter) {
+                State.currentFilter = filter;
+
+                // Update active button
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+
+                // Re-render
+                Renders.renderRekapDetail();
+                Renders.renderStats();
+                Renders.renderChart();
+                Renders.renderCalendar();
+            }
+        };
+
+        // ==================== RENDERS ====================
+        const Renders = {
+            // Render siswa table
+            async renderSiswaTable() {
+                try {
+                    const siswaList = await API.getSiswa();
+                    const tbody = document.getElementById('tabelSiswa');
+
+                    if (!tbody) return;
+
+                    tbody.innerHTML = siswaList.map((siswa, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${Utils.sanitize(siswa.nama)}</td>
+                            <td>${Utils.sanitize(siswa.nis)}</td>
+                            <td>
+                                <button class="btn btn-danger" onclick="Handlers.handleDeleteSiswa(${siswa.id})">Hapus</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } catch (error) {
+                    console.error('Failed to render siswa table:', error);
+                }
+            },
+
+            // Render rekap table (today)
+            async renderRekapTable() {
+                try {
+                    const rekapData = await API.getRekap('hari');
+                    const tbody = document.getElementById('tabelRekap');
+
+                    if (!tbody) return;
+
+                    // Sort by nama A-Z
+                    rekapData.sort((a, b) => a.nama.localeCompare(b.nama));
+
+                    tbody.innerHTML = rekapData.map((rekap, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${Utils.sanitize(rekap.nama)}</td>
+                            <td>${Utils.sanitize(rekap.nis)}</td>
+                            <td>${Utils.formatDisplayDate(rekap.tanggal)}</td>
+                            <td>
+                                <select onchange="Handlers.handleUpdateStatus(${rekap.id}, this.value)" data-rekap-id="${rekap.id}">
+                                    <option value="Hadir" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Hadir' ? 'selected' : ''}>Hadir</option>
+                                    <option value="Izin" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Izin' ? 'selected' : ''}>Izin</option>
+                                    <option value="Sakit" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Sakit' ? 'selected' : ''}>Sakit</option>
+                                    <option value="Alpa" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Alpa' ? 'selected' : ''}>Alpa</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn btn-primary" onclick="const select = this.closest('tr').querySelector('select'); Handlers.handleUpdateStatus(${rekap.id}, select.value)">Update</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } catch (error) {
+                    console.error('Failed to render rekap table:', error);
+                }
+            },
+
+            // Render stats today
+            async renderStatsToday() {
+                try {
+                    const stats = await API.getStatistics([Utils.formatDate()]);
+                    const container = document.getElementById('statsToday');
+
+                    if (!container) return;
+
+                    container.innerHTML = Components.StatsCards(stats);
+                } catch (error) {
+                    console.error('Failed to render stats today:', error);
+                }
+            },
+
+            // Render rekap detail (filtered)
+            async renderRekapDetail() {
+                try {
+                    let dates = [];
+                    if (State.currentFilter === 'hari') {
+                        dates = [Utils.formatDate()];
+                    } else if (State.currentFilter === 'minggu') {
+                        dates = Utils.getWeekDates();
+                    } else if (State.currentFilter === 'bulan') {
+                        dates = Utils.getMonthDates();
+                    }
+
+                    const rekapData = await API.getRekap(State.currentFilter);
+                    const tbody = document.getElementById('tabelRekapDetail');
+
+                    if (!tbody) return;
+
+                    // Sort by nama A-Z
+                    rekapData.sort((a, b) => a.nama.localeCompare(b.nama));
+
+                    tbody.innerHTML = rekapData.map((rekap, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${Utils.sanitize(rekap.nama)}</td>
+                            <td>${Utils.sanitize(rekap.nis)}</td>
+                            <td>${Utils.formatDisplayDate(rekap.tanggal)}</td>
+                            <td>
+                                <select onchange="Handlers.handleUpdateStatus(${rekap.id}, this.value)" data-rekap-id="${rekap.id}">
+                                    <option value="Hadir" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Hadir' ? 'selected' : ''}>Hadir</option>
+                                    <option value="Izin" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Izin' ? 'selected' : ''}>Izin</option>
+                                    <option value="Sakit" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Sakit' ? 'selected' : ''}>Sakit</option>
+                                    <option value="Alpa" ${(rekap.status.charAt(0).toUpperCase() + rekap.status.slice(1)) === 'Alpa' ? 'selected' : ''}>Alpa</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn btn-primary" onclick="const select = this.closest('tr').querySelector('select'); Handlers.handleUpdateStatus(${rekap.id}, select.value)">Update</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } catch (error) {
+                    console.error('Failed to render rekap detail:', error);
+                }
+            },
+
+            // Render stats
+            async renderStats() {
+                try {
+                    let dates = [];
+                    if (State.currentFilter === 'hari') {
+                        dates = [Utils.formatDate()];
+                    } else if (State.currentFilter === 'minggu') {
+                        dates = Utils.getWeekDates();
+                    } else if (State.currentFilter === 'bulan') {
+                        dates = Utils.getMonthDates();
+                    }
+
+                    const stats = await API.getStatistics(dates);
+                    const container = document.getElementById('statsContainer');
+
+                    if (!container) return;
+
+                    container.innerHTML = Components.StatsCards(stats);
+                } catch (error) {
+                    console.error('Failed to render stats:', error);
+                }
+            },
+
+            // Render chart
+            async renderChart() {
+                try {
+                    let dates = [];
+                    if (State.currentFilter === 'hari') {
+                        dates = [Utils.formatDate()];
+                    } else if (State.currentFilter === 'minggu') {
+                        dates = Utils.getWeekDates();
+                    } else if (State.currentFilter === 'bulan') {
+                        dates = Utils.getMonthDates();
+                    }
+
+                    const stats = await API.getStatistics(dates);
+                    const ctx = document.getElementById('attendanceChart');
+
+                    if (!ctx) return;
+
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Hadir', 'Izin', 'Sakit', 'Alpa'],
+                            datasets: [{
+                                data: [stats.hadir, stats.izin, stats.sakit, stats.alpa],
+                                backgroundColor: ['#10b981', '#f97316', '#3b82f6', '#ef4444'],
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom'
+                                }
+                            }
+                        }
+                    });
+                } catch (error) {
+                    console.error('Failed to render chart:', error);
+                }
+            },
+
+            // Render calendar
+            async renderCalendar() {
+                try {
+                    let dates = [];
+                    if (State.currentFilter === 'hari') {
+                        dates = [Utils.formatDate()];
+                    } else if (State.currentFilter === 'minggu') {
+                        dates = Utils.getWeekDates();
+                    } else if (State.currentFilter === 'bulan') {
+                        dates = Utils.getMonthDates();
+                    }
+
+                    const rekapData = await API.getRekap(State.currentFilter);
+                    const calendarView = document.getElementById('calendarView');
+                    const calendarTitle = document.getElementById('calendarTitle');
+
+                    if (!calendarView || !calendarTitle) return;
+
+                    // Group by date
+                    const dateMap = new Map();
+                    rekapData.forEach(r => {
+                        if (!dateMap.has(r.tanggal)) {
+                            dateMap.set(r.tanggal, []);
+                        }
+                        dateMap.get(r.tanggal).push(r);
+                    });
+
+                    if (State.currentFilter === 'hari') {
+                        calendarTitle.textContent = '📅 Kehadiran Hari Ini';
+                        calendarView.innerHTML = `
+                            <div class="date-cell ${dateMap.has(dates[0]) ? dateMap.get(dates[0])[0].status : 'alpa'}">
+                                ${new Date(dates[0]).getDate()}
+                                <small>${new Date(dates[0]).toLocaleDateString('id-ID', { weekday: 'short' })}</small>
+                            </div>
+                        `;
+                    } else if (State.currentFilter === 'minggu') {
+                        calendarTitle.textContent = '📅 Kalender Minggu Ini';
+                        const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum'];
+                        calendarView.innerHTML = `
+                            ${days.map((day, i) => `
+                                <div class="date-cell header">${day}</div>
+                            `).join('')}
+                            ${dates.map(date => {
+                            const dayData = dateMap.get(date) || [];
+                            const status = dayData.length > 0 ? dayData[0].status : 'alpa';
+                            return `
+                                    <div class="date-cell ${status}">
+                                        ${new Date(date).getDate()}
+                                        <small>${dayData.length} siswa</small>
+                                    </div>
+                                `;
+                        }).join('')}
+                        `;
+                    } else if (State.currentFilter === 'bulan') {
+                        calendarTitle.textContent = '📅 Kalender Bulan Ini';
+                        const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+                        const firstDay = new Date(dates[0]).getDay();
+                        const emptyCells = Array(firstDay).fill('<div class="date-cell"></div>').join('');
+
+                        calendarView.innerHTML = `
+                            ${days.map(day => `<div class="date-cell header">${day}</div>`).join('')}
+                            ${emptyCells}
+                            ${dates.map(date => {
+                            const dayData = dateMap.get(date) || [];
+                            const status = dayData.length > 0 ? dayData[0].status : 'alpa';
+                            return `
+                                    <div class="date-cell ${status}">
+                                        ${new Date(date).getDate()}
+                                        <small>${dayData.length} siswa</small>
+                                    </div>
+                                `;
+                        }).join('')}
+                        `;
+                    }
+                } catch (error) {
+                    console.error('Failed to render calendar:', error);
+                }
+            },
+
+            // Render token display
+            async updateTokenDisplay() {
+                try {
+                    const token = await Auth.getToken();
+                    const tokenDisplay = document.getElementById('tokenDisplay');
+
+                    if (tokenDisplay) {
+                        tokenDisplay.textContent = `Token: ${token}`;
+                    }
+                } catch (error) {
+                    console.error('Failed to render token:', error);
+                }
+            }
+        };
+
+        // ==================== ROUTER ====================
+        const Router = {
+            render() {
+                const app = document.getElementById('app');
+
+                if (!app) return;
+
+                // Check authentication
+                if (State.currentPage !== 'absensi' && State.currentPage !== 'login' && !Auth.isLoggedIn()) {
+                    State.setPage('login');
+                    return;
+                }
+
+                // Render page
+                switch (State.currentPage) {
+                    case 'absensi':
+                        app.innerHTML = Components.AbsensiPage();
+                        break;
+                    case 'login':
+                        app.innerHTML = Components.LoginPage();
+                        break;
+                    case 'dashboard':
+                        app.innerHTML = Components.DashboardPage();
+                        Renders.renderSiswaTable();
+                        Renders.renderRekapTable();
+                        Renders.renderStatsToday();
+                        Renders.updateTokenDisplay();
+                        break;
+                    case 'rekap':
+                        app.innerHTML = Components.RekapPage();
+                        Renders.renderRekapDetail();
+                        Renders.renderStats();
+                        Renders.renderChart();
+                        Renders.renderCalendar();
+                        break;
+                    default:
+                        State.setPage('absensi');
+                }
+            }
+        };
+
+        // ==================== INITIALIZATION ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            Router.render();
+        });
+    </script>
+</body>
+
+</html>
