@@ -685,7 +685,7 @@
         };
 
         // ==================== SOCKET.IO CLIENT ====================
-        let socket = io('https://freakiahh-absensi.loca.lt');
+        let socket = io('http://localhost:3000');
 
         socket.on('connect', () => console.log('Connected to server'));
         socket.on('absensi-added', () => {
@@ -935,7 +935,7 @@
             }
         };
 
-        const API_URL = "https://freakiahh-absensi.loca.lt/api";
+        const API_URL = "https://absensi-siswa-one.vercel.app/api";
 
         // ==================== STATE MANAGEMENT ====================
         const State = {
