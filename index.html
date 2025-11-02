@@ -618,7 +618,6 @@
             color: #6b7280;
         }
     </style>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 
 <body>
@@ -645,7 +644,7 @@
             },
 
             async login(nickname, password) {
-                const response = await fetch(`${API_URL}/auth/login`, {
+                const response = await fetch(`${API_URL}/api/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ nickname, password })
@@ -662,7 +661,7 @@
             },
 
             async getToken() {
-                const response = await fetch(`${API_URL}/auth/token`);
+                const response = await fetch(`${API_URL}/api/auth/token`);
                 const data = await response.json();
 
                 if (!response.ok) {
@@ -673,7 +672,7 @@
             },
 
             async validateToken(token) {
-                const response = await fetch(`${API_URL}/auth/validate-token`, {
+                const response = await fetch(`${API_URL}/api/auth/validate-token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token })
@@ -690,18 +689,8 @@
 
         // Initialize connection based on environment
         async function initializeConnection() {
-            try {
-                API_URL = "http://localhost:3000";
-                // Try to get tunnel URL from localtunnel server
-                const response = await fetch(`${API_URL}/api/tunnel-url`);
-                const data = await response.json();
-                API_URL = data.tunnelUrl.replace('/api', '');
-                socket = io(API_URL);
-            } catch (error) {
-                // Fallback to localhost for development
-                API_URL = "http://localhost:3000";
-                socket = io('http://localhost:3000');
-            }
+            API_URL = "http://localhost:3000";
+            socket = io('http://localhost:3000');
 
             // Set up socket event listeners after connection is established
             socket.on('connect', () => console.log('Connected to server'));
