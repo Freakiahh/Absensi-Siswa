@@ -33,6 +33,11 @@ app.get('/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Get tunnel URL
+app.get('/api/tunnel-url', (req, res) => {
+    res.json({ url: global.tunnelUrl || 'http://localhost:3000' });
+});
+
 // WebSocket connection
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
