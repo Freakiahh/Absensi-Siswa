@@ -35,7 +35,7 @@ app.get('/health', (req, res) => {
 
 // Get tunnel URL
 app.get('/api/tunnel-url', (req, res) => {
-    res.json({ url: global.tunnelUrl || 'http://localhost:3000' });
+    res.json({ tunnelUrl: global.tunnelUrl || 'https://freakiahh-absensi.loca.lt' });
 });
 
 // WebSocket connection

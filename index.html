@@ -691,10 +691,11 @@
         // Initialize connection based on environment
         async function initializeConnection() {
             try {
-                // Try to get tunnel URL first (for production/mobile)
-                const response = await fetch('https://absensi-siswa-one.vercel.app/api/tunnel-url');
+                API_URL = "http://localhost:3000";
+                // Try to get tunnel URL from localtunnel server
+                const response = await fetch(`${API_URL}/api/tunnel-url`);
                 const data = await response.json();
-                API_URL = data.url.replace('/api', '');
+                API_URL = data.tunnelUrl.replace('/api', '');
                 socket = io(API_URL);
             } catch (error) {
                 // Fallback to localhost for development
