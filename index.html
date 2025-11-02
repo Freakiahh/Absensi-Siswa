@@ -451,6 +451,11 @@
             border-color: #ef4444;
         }
 
+        .date-cell.selected {
+            box-shadow: 0 0 0 3px var(--accent);
+            transform: scale(1.05);
+        }
+
         .date-cell small {
             font-size: 0.75rem;
             color: var(--muted);
@@ -604,6 +609,14 @@
         .stat-card.alpa .value {
             color: #ef4444;
         }
+
+        .stat-card.belum_absen {
+            border-left-color: #6b7280;
+        }
+
+        .stat-card.belum_absen .value {
+            color: #6b7280;
+        }
     </style>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
@@ -745,18 +758,49 @@
                 return `F1${day}${month}${random}`;
             },
 
-            // Get week dates (Mon-Fri)
+            // Get week dates (Mon-Sun, only up to today) - FIXED
             getWeekDates() {
                 const today = new Date();
                 const dates = [];
-                const monday = new Date(today);
-                monday.setDate(today.getDate() - today.getDay() + 1);
 
-                for (let i = 0; i < 5; i++) {
+                // Handle Sunday (0) edge case - FIXED
+                const dayOfWeek = today.getDay();
+                const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                const monday = new Date(today);
+                monday.setDate(today.getDate() + mondayOffset);
+
+                // Generate 7 days, but only up to today - FIXED
+                for (let i = 0; i < 7; i++) {
+                    const date = new Date(monday);
+                    date.setDate(monday.getDate() + i);
+
+                    // Only add dates up to today - FIXED
+                    if (date <= today) {
+                        dates.push(this.formatDate(date));
+                    }
+                }
+
+                return dates;
+            },
+
+            // Get full week dates (Mon-Sun, including future for calendar)
+            getFullWeekDates() {
+                const today = new Date();
+                const dates = [];
+
+                // Handle Sunday (0) edge case
+                const dayOfWeek = today.getDay();
+                const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                const monday = new Date(today);
+                monday.setDate(today.getDate() + mondayOffset);
+
+                // Generate all 7 days of the week
+                for (let i = 0; i < 7; i++) {
                     const date = new Date(monday);
                     date.setDate(monday.getDate() + i);
                     dates.push(this.formatDate(date));
                 }
+
                 return dates;
             },
 
@@ -773,6 +817,45 @@
                     dates.push(this.formatDate(currentDate));
                 }
                 return dates;
+            },
+
+            // Get aggregated status (Alpa > Sakit > Izin > Hadir)
+            getAggregatedStatus(attendances) {
+                if (!attendances || attendances.length === 0) return 'alpa';
+
+                // Priority: Alpa > Sakit > Izin > Hadir
+                const statusPriority = { 'alpa': 4, 'sakit': 3, 'izin': 2, 'hadir': 1 };
+
+                let highestPriority = 0;
+                let aggregatedStatus = 'alpa';
+
+                attendances.forEach(attendance => {
+                    const status = attendance.status.toLowerCase();
+                    const priority = statusPriority[status] || 0;
+                    if (priority > highestPriority) {
+                        highestPriority = priority;
+                        aggregatedStatus = status;
+                    }
+                });
+
+                return aggregatedStatus;
+            },
+
+            // Check if date is holiday/weekend
+            isLibur(dateString) {
+                const date = new Date(dateString);
+                const dayOfWeek = date.getDay();
+                // Sunday = 0, Saturday = 6
+                return dayOfWeek === 0 || dayOfWeek === 6;
+            },
+
+            // Check if date is in the future
+            isFuture(dateString) {
+                const date = new Date(dateString);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                date.setHours(0, 0, 0, 0);
+                return date > today;
             },
 
             // Validate NIS (must be numeric)
@@ -870,6 +953,16 @@
                 this.currentUser = user;
             },
 
+            setSelectedDate(date) {
+                this.selectedDate = date;
+                if (this.currentPage === 'rekap') {
+                    Renders.renderRekapDetail();
+                    Renders.renderStats();
+                    Renders.renderChart();
+                    Renders.renderCalendar();
+                }
+            },
+
             logout() {
                 this.currentUser = null;
                 this.setPage('login');
@@ -915,15 +1008,37 @@
             },
 
             // Get rekap
-            async getRekap(filter = 'all') {
+            async getRekap(filter = 'all', dates = null) {
                 const params = new URLSearchParams();
                 if (filter !== 'all') {
                     params.append('filter', filter);
+                }
+                if (dates && dates.length > 0) {
+                    params.append('dates', dates.join(','));
                 }
 
                 const response = await fetch(`${API_URL}/rekap?${params}`);
                 if (!response.ok) {
                     throw new Error('Failed to fetch rekap');
+                }
+
+                const rekapData = await response.json();
+
+                // Join with siswa data
+                const siswaList = await this.getSiswa();
+                const siswaMap = new Map(siswaList.map(s => [s.nis, s.nama]));
+
+                return rekapData.map(r => ({
+                    ...r,
+                    nama: siswaMap.get(r.nis) || 'Tidak ditemukan'
+                }));
+            },
+
+            // Get rekap by specific date
+            async getRekapByDate(date) {
+                const response = await fetch(`${API_URL}/rekap/by-date?date=${date}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch rekap by date');
                 }
 
                 const rekapData = await response.json();
@@ -1104,11 +1219,10 @@
 
                         <div class="content-card">
                             <h3>🗓️ Filter Tampilan</h3>
-                            <div class="filter-controls">
-                                <button class="filter-btn active" data-filter="hari" onclick="Handlers.handleFilter('hari')">Hari Ini</button>
-                                <button class="filter-btn" data-filter="minggu" onclick="Handlers.handleFilter('minggu')">Minggu Ini</button>
-                                <button class="filter-btn" data-filter="bulan" onclick="Handlers.handleFilter('bulan')">Bulan Ini</button>
-                            </div>
+<div class="filter-controls">
+<button class="filter-btn active" data-filter="hari" onclick="Handlers.handleFilter('hari')">Hari Ini</button>
+<button class="filter-btn" data-filter="bulan" onclick="Handlers.handleFilter('bulan')">Bulan Ini</button>
+</div>
                             <div id="statsContainer"></div>
                         </div>
 
@@ -1171,6 +1285,10 @@
                         <div class="stat-card alpa">
                             <h4>Alpa</h4>
                             <div class="value">${stats.alpa}</div>
+                        </div>
+                        <div class="stat-card belum_absen">
+                            <h4>Belum Absen</h4>
+                            <div class="value">${stats.belum_absen}</div>
                         </div>
                     </div>
                 `;
@@ -1321,6 +1439,7 @@
             // Handle filter change
             async handleFilter(filter) {
                 State.currentFilter = filter;
+                State.selectedDate = null; // Reset selected date when changing filter
 
                 // Update active button
                 document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -1333,6 +1452,11 @@
                 Renders.renderStats();
                 Renders.renderChart();
                 Renders.renderCalendar();
+            },
+
+            // Handle date click
+            handleDateClick(date) {
+                State.setSelectedDate(date);
             }
         };
 
@@ -1413,19 +1537,32 @@
             // Render rekap detail (filtered)
             async renderRekapDetail() {
                 try {
-                    let dates = [];
-                    if (State.currentFilter === 'hari') {
-                        dates = [Utils.formatDate()];
-                    } else if (State.currentFilter === 'minggu') {
-                        dates = Utils.getWeekDates();
-                    } else if (State.currentFilter === 'bulan') {
-                        dates = Utils.getMonthDates();
+                    let rekapData;
+                    if (State.selectedDate) {
+                        rekapData = await API.getRekapByDate(State.selectedDate);
+                    } else {
+                        let dates = [];
+                        let filter = State.currentFilter;
+                        if (State.currentFilter === 'hari') {
+                            dates = [Utils.formatDate()];
+                        } else if (State.currentFilter === 'minggu') {
+                            dates = Utils.getWeekDates();
+                        } else if (State.currentFilter === 'bulan') {
+                            dates = Utils.getMonthDates();
+                        }
+                        rekapData = await API.getRekap(filter, dates);
                     }
-
-                    const rekapData = await API.getRekap(State.currentFilter);
                     const tbody = document.getElementById('tabelRekapDetail');
+                    const tableTitle = document.getElementById('tableTitle');
 
                     if (!tbody) return;
+
+                    // Update table title
+                    if (State.selectedDate) {
+                        tableTitle.textContent = `📋 Detail Kehadiran - ${Utils.formatDisplayDate(State.selectedDate)}`;
+                    } else {
+                        tableTitle.textContent = '📋 Detail Kehadiran';
+                    }
 
                     // Sort by nama A-Z
                     rekapData.sort((a, b) => a.nama.localeCompare(b.nama));
@@ -1458,12 +1595,16 @@
             async renderStats() {
                 try {
                     let dates = [];
-                    if (State.currentFilter === 'hari') {
-                        dates = [Utils.formatDate()];
-                    } else if (State.currentFilter === 'minggu') {
-                        dates = Utils.getWeekDates();
-                    } else if (State.currentFilter === 'bulan') {
-                        dates = Utils.getMonthDates();
+                    if (State.selectedDate) {
+                        dates = [State.selectedDate];
+                    } else {
+                        if (State.currentFilter === 'hari') {
+                            dates = [Utils.formatDate()];
+                        } else if (State.currentFilter === 'minggu') {
+                            dates = Utils.getWeekDates();
+                        } else if (State.currentFilter === 'bulan') {
+                            dates = Utils.getMonthDates();
+                        }
                     }
 
                     const stats = await API.getStatistics(dates);
@@ -1480,39 +1621,69 @@
             // Render chart
             async renderChart() {
                 try {
+                    console.log('Rendering chart for filter:', State.currentFilter);
+
                     let dates = [];
-                    if (State.currentFilter === 'hari') {
-                        dates = [Utils.formatDate()];
-                    } else if (State.currentFilter === 'minggu') {
-                        dates = Utils.getWeekDates();
-                    } else if (State.currentFilter === 'bulan') {
-                        dates = Utils.getMonthDates();
+                    if (State.selectedDate) {
+                        dates = [State.selectedDate];
+                    } else {
+                        if (State.currentFilter === 'hari') {
+                            dates = [Utils.formatDate()];
+                        } else if (State.currentFilter === 'minggu') {
+                            dates = Utils.getWeekDates();
+                        } else if (State.currentFilter === 'bulan') {
+                            dates = Utils.getMonthDates();
+                        }
                     }
 
+                    console.log('Dates for stats:', dates);
+
                     const stats = await API.getStatistics(dates);
+                    console.log('Stats received:', stats);
+
                     const ctx = document.getElementById('attendanceChart');
 
-                    if (!ctx) return;
+                    if (!ctx) {
+                        console.error('Chart canvas not found');
+                        return;
+                    }
 
-                    new Chart(ctx, {
-                        type: 'doughnut',
+                    // Destroy old chart to prevent memory leaks
+                    if (window.attendanceChart && typeof window.attendanceChart.destroy === 'function') {
+                        window.attendanceChart.destroy();
+                    }
+
+                    window.attendanceChart = new Chart(ctx, {
+                        type: 'bar',
                         data: {
-                            labels: ['Hadir', 'Izin', 'Sakit', 'Alpa'],
+                            labels: ['Hadir', 'Izin', 'Sakit', 'Alpa', 'Belum Absen'],
                             datasets: [{
-                                data: [stats.hadir, stats.izin, stats.sakit, stats.alpa],
-                                backgroundColor: ['#10b981', '#f97316', '#3b82f6', '#ef4444'],
-                                borderWidth: 2
+                                label: 'Jumlah Siswa',
+                                data: [stats.hadir, stats.izin, stats.sakit, stats.alpa, stats.belum_absen],
+                                backgroundColor: ['#10b981', '#f97316', '#3b82f6', '#ef4444', '#6b7280'],
+                                borderColor: ['#059669', '#ea580c', '#2563eb', '#dc2626', '#4b5563'],
+                                borderWidth: 1
                             }]
                         },
                         options: {
                             responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        stepSize: 1
+                                    }
+                                }
+                            },
                             plugins: {
                                 legend: {
-                                    position: 'bottom'
+                                    display: false
                                 }
                             }
                         }
                     });
+
+                    console.log('Chart rendered successfully');
                 } catch (error) {
                     console.error('Failed to render chart:', error);
                 }
@@ -1525,7 +1696,7 @@
                     if (State.currentFilter === 'hari') {
                         dates = [Utils.formatDate()];
                     } else if (State.currentFilter === 'minggu') {
-                        dates = Utils.getWeekDates();
+                        dates = Utils.getFullWeekDates();
                     } else if (State.currentFilter === 'bulan') {
                         dates = Utils.getMonthDates();
                     }
@@ -1536,33 +1707,36 @@
 
                     if (!calendarView || !calendarTitle) return;
 
-                    // Group by date
+                    // Group by date (normalize to YYYY-MM-DD in local timezone)
                     const dateMap = new Map();
                     rekapData.forEach(r => {
-                        if (!dateMap.has(r.tanggal)) {
-                            dateMap.set(r.tanggal, []);
+                        const dateKey = new Date(r.tanggal).toLocaleDateString('en-CA');
+                        if (!dateMap.has(dateKey)) {
+                            dateMap.set(dateKey, []);
                         }
-                        dateMap.get(r.tanggal).push(r);
+                        dateMap.get(dateKey).push(r);
                     });
 
                     if (State.currentFilter === 'hari') {
                         calendarTitle.textContent = '📅 Kehadiran Hari Ini';
+                        const dayData = dateMap.get(dates[0]) || [];
+                        const status = Utils.getAggregatedStatus(dayData);
                         calendarView.innerHTML = `
-                            <div class="date-cell ${dateMap.has(dates[0]) ? dateMap.get(dates[0])[0].status : 'alpa'}">
+                            <div class="date-cell ${status}">
                                 ${new Date(dates[0]).getDate()}
                                 <small>${new Date(dates[0]).toLocaleDateString('id-ID', { weekday: 'short' })}</small>
                             </div>
                         `;
                     } else if (State.currentFilter === 'minggu') {
                         calendarTitle.textContent = '📅 Kalender Minggu Ini';
-                        const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum'];
+                        const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
                         calendarView.innerHTML = `
                             ${days.map((day, i) => `
                                 <div class="date-cell header">${day}</div>
                             `).join('')}
                             ${dates.map(date => {
                             const dayData = dateMap.get(date) || [];
-                            const status = dayData.length > 0 ? dayData[0].status : 'alpa';
+                            const status = Utils.getAggregatedStatus(dayData);
                             return `
                                     <div class="date-cell ${status}">
                                         ${new Date(date).getDate()}
@@ -1582,9 +1756,10 @@
                             ${emptyCells}
                             ${dates.map(date => {
                             const dayData = dateMap.get(date) || [];
-                            const status = dayData.length > 0 ? dayData[0].status : 'alpa';
+                            const status = Utils.getAggregatedStatus(dayData);
+                            const isSelected = State.selectedDate === date;
                             return `
-                                    <div class="date-cell ${status}">
+                                    <div class="date-cell ${status} ${isSelected ? 'selected' : ''}" onclick="Handlers.handleDateClick('${date}')" style="${isSelected ? 'border: 2px solid #2563eb; background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);' : ''}">
                                         ${new Date(date).getDate()}
                                         <small>${dayData.length} siswa</small>
                                     </div>
