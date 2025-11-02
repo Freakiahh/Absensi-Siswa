@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
+const localtunnel = require('localtunnel');
 require('dotenv').config();
 
 const app = express();
@@ -46,6 +47,27 @@ global.io = io;
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-server.listen(PORT, HOST, () => {
-    console.log(`🚀 Server running on http://${HOST}:${PORT}`);
-});
+
+async function startServer() {
+    // Start the server
+    server.listen(PORT, HOST, async () => {
+        console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+
+        // Start localtunnel for HTTPS exposure
+        try {
+            const tunnel = await localtunnel({ port: PORT });
+            console.log(`🌐 Public URL: ${tunnel.url}`);
+
+            // Store tunnel URL for potential use
+            global.tunnelUrl = tunnel.url;
+
+            tunnel.on('close', () => {
+                console.log('Tunnel closed');
+            });
+        } catch (error) {
+            console.error('Failed to start localtunnel:', error);
+        }
+    });
+}
+
+startServer();
